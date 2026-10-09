@@ -37,6 +37,8 @@ object Store {
     private val running = mutableMapOf<String, Boolean>()
     /** rule id -> (day, warnings already shown that day) */
     private val fired = mutableMapOf<String, Pair<String, MutableSet<Int>>>()
+    /** (rule id, extra stage) whose "1 minute left" warning was shown */
+    private val extraWarned = mutableSetOf<Pair<String, Int>>()
 
     private val _snapshot = MutableStateFlow<Snapshot?>(null)
     val snapshot: StateFlow<Snapshot?> = _snapshot
@@ -70,9 +72,11 @@ object Store {
         return trusted
     }
 
-    private fun today(): DayInfo {
+    private fun today(): DayInfo = dayAt(now())
+
+    private fun dayAt(t: Long): DayInfo {
         val zone = ZoneId.systemDefault()
-        val shifted = Instant.ofEpochMilli(now()).atZone(zone).minusHours(data.settings.resetHour.toLong())
+        val shifted = Instant.ofEpochMilli(t).atZone(zone).minusHours(data.settings.resetHour.toLong())
         val date = shifted.toLocalDate()
         val nextReset = date.plusDays(1).atStartOfDay(zone).plusHours(data.settings.resetHour.toLong())
         return DayInfo(date.toString(), date, shifted.dayOfWeek, nextReset)
@@ -82,10 +86,11 @@ object Store {
 
     // ---------- Status ----------
 
-    private fun statusOf(rule: Rule, day: DayInfo): RuleStatus {
+    private fun statusOf(rule: Rule, day: DayInfo, now: Long): RuleStatus {
         val used = data.usage[day.key]?.get(rule.id) ?: 0.0
         val limit = rule.limitSec(day.weekday)
         val reached = rule.enabled && used >= limit
+        val state = data.extra[rule.id]?.takeIf { it.day == day.key } ?: ExtraState(day.key)
         return RuleStatus(
             rule = rule,
             usedSec = used,
@@ -93,12 +98,21 @@ object Store {
             running = running[rule.id] == true,
             reached = reached,
             locked = reached && rule.lockWhenReached,
+            extra = extraInfo(state, now, rule.allowExtra),
         )
     }
 
+    private fun extraInfo(state: ExtraState, now: Long, allowed: Boolean) = ExtraInfo(
+        activeLeft = state.activeUntil?.let { max(0L, it - now) / 1000.0 },
+        cooldownLeft = state.cooldownUntil?.let { max(0L, it - now) / 1000.0 },
+        nextMinutes = if (allowed) EXTRA_STEPS_MIN.getOrNull(state.stage) else null,
+        used = state.stage,
+    )
+
     private fun buildSnapshot(): Snapshot {
-        val day = today()
-        val rules = data.rules.map { statusOf(it, day) }
+        val now = now()
+        val day = dayAt(now)
+        val rules = data.rules.map { statusOf(it, day, now) }
         val busy = rules.any { it.locked || (it.running && it.rule.enabled) }
         return Snapshot(day, rules, data.settings, canStop = !data.settings.guardStop || !busy)
     }
@@ -108,13 +122,66 @@ object Store {
     }
 
     private fun isLocked(ruleId: String): Boolean {
-        val day = today()
-        return data.rules.find { it.id == ruleId }?.let { statusOf(it, day).locked } == true
+        val now = now()
+        val day = dayAt(now)
+        return data.rules.find { it.id == ruleId }?.let { statusOf(it, day, now).locked } == true
     }
 
     private fun anyLocked(): Boolean {
-        val day = today()
-        return data.rules.any { statusOf(it, day).locked }
+        val now = now()
+        val day = dayAt(now)
+        return data.rules.any { statusOf(it, day, now).locked }
+    }
+
+    // ---------- Extra time ----------
+
+    /**
+     * Today's extra-time state for a rule. Ends sessions whose time is up and returns
+     * `true`/`false` as second value when one just ended (`true`: no extra time left after it).
+     */
+    private fun extraTick(ruleId: String, day: String, now: Long): Pair<ExtraState, Boolean?> {
+        var e = data.extra[ruleId]?.takeIf { it.day == day } ?: ExtraState(day)
+        var ended: Boolean? = null
+        val until = e.activeUntil
+        if (until != null && now >= until) {
+            val last = e.stage >= EXTRA_STEPS_MIN.size
+            e = e.copy(activeUntil = null, cooldownUntil = if (last) null else until + EXTRA_COOLDOWN_MS)
+            ended = last
+        }
+        if (e.cooldownUntil?.let { now >= it } == true) e = e.copy(cooldownUntil = null)
+        if (e != data.extra[ruleId]) {
+            data = data.copy(extra = data.extra + (ruleId to e))
+            dirty = true
+        }
+        return e to ended
+    }
+
+    /** Starts the next extra session (5, then 2, then 1 minute). Returns its length, or an error message. */
+    @Synchronized
+    fun startExtra(ruleId: String): Result<Int> {
+        val now = now()
+        val day = dayAt(now)
+        val rule = data.rules.find { it.id == ruleId } ?: return Result.failure(Exception("This limit no longer exists."))
+        if (!rule.allowExtra) return Result.failure(Exception("Extra time is turned off for ${rule.name}."))
+        if (!statusOf(rule, day, now).reached) return Result.failure(Exception("${rule.name} still has time left today."))
+        val (state, _) = extraTick(ruleId, day.key, now)
+        if (state.activeUntil != null) return Result.failure(Exception("Extra time is already running."))
+        state.cooldownUntil?.let {
+            val left = (it - now) / 1000
+            return Result.failure(Exception("Next extra time in ${left / 60}:${(left % 60).toString().padStart(2, '0')}."))
+        }
+        val minutes = EXTRA_STEPS_MIN.getOrNull(state.stage)
+            ?: return Result.failure(Exception("No extra time left today. ${rule.name} unlocks at ${resetLabel(day)}."))
+        data = data.copy(extra = data.extra + (ruleId to state.copy(stage = state.stage + 1, activeUntil = now + minutes * 60_000L)))
+        commit()
+        return Result.success(minutes)
+    }
+
+    /** Sets the display name of the custom sound (the file itself is managed by the caller). */
+    @Synchronized
+    fun setSoundName(name: String?) {
+        data = data.copy(settings = data.settings.copy(soundName = name))
+        commit()
     }
 
     private fun lockedError(name: String) =
@@ -130,7 +197,8 @@ object Store {
      */
     @Synchronized
     fun tick(foreground: String?, dt: Double): TickResult {
-        val day = today()
+        val now = now()
+        val day = dayAt(now)
         val resetAt = resetLabel(day)
         val alerts = mutableListOf<Alert>()
         var block: BlockRequest? = null
@@ -140,14 +208,40 @@ object Store {
         for (rule in data.rules.filter { it.enabled }) {
             val onScreen = foreground != null && foreground in rule.packages
             val limit = rule.limitSec(day.weekday)
+            val (extra, extraEnded) = extraTick(rule.id, day.key, now)
+            val inExtra = extra.activeUntil != null
+            val nextExtra = if (rule.allowExtra) EXTRA_STEPS_MIN.getOrNull(extra.stage) else null
+
             val before = dayUsage[rule.id] ?: 0.0
             val wasUnder = before < limit
-            val used = if (onScreen && wasUnder) min(before + dt, limit) else before
+            val used = when {
+                onScreen && wasUnder -> min(before + dt, limit)
+                onScreen && inExtra -> before + dt // extra time still shows up in the history
+                else -> before
+            }
             if (used != before || rule.id !in dayUsage) {
                 dayUsage[rule.id] = used
                 dirty = true
             }
             if (onScreen) running[rule.id] = true
+
+            if (extraEnded != null) {
+                alerts += Alert(
+                    Level.Danger,
+                    "Extra time is over — ${rule.name}",
+                    if (extraEnded) "That was the last extra time. It unlocks at $resetAt."
+                    else "You can come back for ${nextExtra ?: 1} more minute${if (nextExtra == 1) "" else "s"} in 5 minutes.",
+                )
+            }
+
+            if (onScreen && limit - used <= 0.0 && inExtra) {
+                val left = (extra.activeUntil!! - now) / 1000
+                val sessionMin = EXTRA_STEPS_MIN[(extra.stage - 1).coerceIn(0, EXTRA_STEPS_MIN.lastIndex)]
+                if (left <= 60 && sessionMin > 1 && extraWarned.add(rule.id to extra.stage)) {
+                    alerts += Alert(Level.Warning, "${rule.name} — 1 minute of extra time left", "Wrap up now. It will be locked when the extra time runs out.")
+                }
+                continue
+            }
 
             // Re-arm warnings when the limit went up, and reset them on a new day.
             val remaining = limit - used
@@ -162,9 +256,15 @@ object Store {
             if (!onScreen) continue
 
             if (remaining <= 0.0) {
-                block = BlockRequest(rule.name, foreground!!, resetAt)
+                // While extra time is still possible the app stays alive behind the lock screen.
+                block = BlockRequest(rule.id, rule.name, foreground!!, resetAt, kill = nextExtra == null)
                 if (wasUnder) {
-                    alerts += Alert(Level.Danger, "Time's up — ${rule.name}", "Your daily limit is reached. It unlocks at $resetAt.")
+                    alerts += Alert(
+                        Level.Danger,
+                        "Time's up — ${rule.name}",
+                        if (nextExtra != null) "Your daily limit is reached. Need to finish something? You can come back for $nextExtra more minutes."
+                        else "Your daily limit is reached. It unlocks at $resetAt.",
+                    )
                 }
                 continue
             }
@@ -244,7 +344,8 @@ object Store {
         if (protectedChanged && anyLocked()) {
             return "The day start and stop protection can't be changed while a limit is locked."
         }
-        data = data.copy(settings = new.copy(resetHour = new.resetHour.coerceIn(0, 12)))
+        // The sound is only changed through setSoundName.
+        data = data.copy(settings = new.copy(resetHour = new.resetHour.coerceIn(0, 12), soundName = old.soundName))
         commit()
         return null
     }
