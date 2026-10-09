@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rayan.gametimelimiter.R
 import com.rayan.gametimelimiter.data.AppCatalog
+import com.rayan.gametimelimiter.data.ExtraInfo
 import com.rayan.gametimelimiter.data.Rule
 import com.rayan.gametimelimiter.data.RuleStatus
 import com.rayan.gametimelimiter.data.Snapshot
@@ -49,10 +50,12 @@ import com.rayan.gametimelimiter.ui.components.Btn
 import com.rayan.gametimelimiter.ui.components.BtnStyle
 import com.rayan.gametimelimiter.ui.components.Card
 import com.rayan.gametimelimiter.ui.components.Chip
+import com.rayan.gametimelimiter.ui.components.ExtraSteps
 import com.rayan.gametimelimiter.ui.components.Pill
 import com.rayan.gametimelimiter.ui.components.PillKind
 import com.rayan.gametimelimiter.ui.components.Ring
 import com.rayan.gametimelimiter.ui.components.Tone
+import com.rayan.gametimelimiter.ui.fmtCountdown
 import com.rayan.gametimelimiter.ui.fmtDuration
 import com.rayan.gametimelimiter.ui.fmtMinutes
 import com.rayan.gametimelimiter.ui.theme.C
@@ -69,11 +72,12 @@ fun Dashboard(
     onEdit: (Rule) -> Unit,
     onToggle: (Rule) -> Unit,
     onDelete: (Rule) -> Unit,
+    onExtra: (Rule) -> Unit,
     onStartLimiter: () -> Unit,
 ) {
     val resetAt = Store.resetLabel(snap.day)
     val total = snap.rules.sumOf { it.usedSec }
-    val playing = snap.rules.filter { it.running && it.rule.enabled && !it.reached }
+    val playing = snap.rules.filter { it.running && it.rule.enabled && (!it.reached || it.extra.running) }
     val reached = snap.rules.count { it.reached }
     val date = snap.day.date.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.FULL))
 
@@ -119,7 +123,7 @@ fun Dashboard(
             item { EmptyState(onAdd) }
         } else {
             items(snap.rules, key = { it.rule.id }) { status ->
-                RuleCard(status, resetAt, onEdit, onToggle, onDelete)
+                RuleCard(status, resetAt, onEdit, onToggle, onDelete, onExtra)
             }
         }
     }
@@ -172,22 +176,26 @@ fun RuleCard(
     onEdit: (Rule) -> Unit,
     onToggle: (Rule) -> Unit,
     onDelete: (Rule) -> Unit,
+    onExtra: (Rule) -> Unit,
 ) {
     val context = LocalContext.current
     val rule = status.rule
     var confirmDelete by remember { mutableStateOf(false) }
     val remaining = (status.limitSec - status.usedSec).coerceAtLeast(0.0)
     val progress = if (status.limitSec > 0) (status.usedSec / status.limitSec).toFloat() else 1f
-    val live = status.running && rule.enabled && !status.reached
+    val inExtra = status.extra.running
+    val live = status.running && rule.enabled && (!status.reached || inExtra)
 
     val tone = when {
         !rule.enabled -> Tone.Off
+        inExtra -> Tone.Warn
         status.reached -> Tone.Danger
         remaining <= min(600.0, status.limitSec * 0.2) -> Tone.Warn
         else -> Tone.Ok
     }
     val (pillText, pillKind) = when {
         !rule.enabled -> "Paused" to PillKind.Off
+        inExtra -> "Extra time" to PillKind.Live
         status.reached -> (if (status.limitSec == 0.0) "Blocked" else "Limit reached") to PillKind.Danger
         status.running -> "Playing now" to PillKind.Live
         else -> "Not running" to PillKind.Idle
@@ -207,8 +215,12 @@ fun RuleCard(
             }
 
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                Ring(if (rule.enabled) progress else 0f, tone) {
-                    if (status.locked) {
+                val extraLen = com.rayan.gametimelimiter.data.EXTRA_STEPS_MIN[(status.extra.used - 1).coerceIn(0, 2)] * 60.0
+                Ring(if (!rule.enabled) 0f else if (inExtra) ((status.extra.activeLeft ?: 0.0) / extraLen).toFloat() else progress, tone) {
+                    if (inExtra) {
+                        Text(fmtCountdown(status.extra.activeLeft ?: 0.0), color = C.Text, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
+                        Text("extra time", color = C.Muted, fontSize = 11.5.sp)
+                    } else if (status.locked) {
                         Icon(Ic.Lock, null, tint = C.Danger, modifier = Modifier.size(22.dp))
                         Text("until $resetAt", color = C.Muted, fontSize = 11.5.sp)
                     } else {
@@ -228,6 +240,8 @@ fun RuleCard(
                 rule.weekendLimitMin?.let { Chip("Weekend ${fmtMinutes(it)}") }
                 if (rule.lockWhenReached) Chip("Strict", Ic.Lock, color = C.Warn, highlight = true)
             }
+
+            if (status.reached && rule.enabled && rule.allowExtra) ExtraRow(status.extra) { onExtra(rule) }
 
             Box(Modifier.fillMaxWidth().height(1.dp).background(C.Border))
 
@@ -249,6 +263,48 @@ fun RuleCard(
                         Btn(null, { confirmDelete = true }, icon = Ic.Trash, small = true)
                     }
                 }
+            }
+        }
+    }
+}
+
+/** Extra time after the limit: available, running, cooling down or used up. */
+@Composable
+private fun ExtraRow(extra: ExtraInfo, onStart: () -> Unit) {
+    val (border, bg) = when {
+        extra.running -> C.Warn.copy(alpha = 0.35f) to C.Warn.copy(alpha = 0.07f)
+        extra.canStart -> C.Accent.copy(alpha = 0.35f) to C.AccentSoft
+        else -> C.Border to C.Surface2
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(bg)
+            .border(1.dp, border, RoundedCornerShape(12.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(9.dp),
+    ) {
+        when {
+            extra.running -> {
+                Icon(Ic.Clock, null, tint = C.Warn, modifier = Modifier.size(15.dp))
+                Text("Extra time — ${fmtCountdown(extra.activeLeft ?: 0.0)} left", color = C.Text, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                ExtraSteps(extra.used)
+            }
+            extra.nextMinutes == null -> {
+                Icon(Ic.Lock, null, tint = C.Muted, modifier = Modifier.size(15.dp))
+                Text("No extra time left today", color = C.Muted, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                ExtraSteps(extra.used)
+            }
+            extra.cooldownLeft != null -> {
+                Icon(Ic.Clock, null, tint = C.Muted, modifier = Modifier.size(15.dp))
+                Text("${extra.nextMinutes} more min in ${fmtCountdown(extra.cooldownLeft)}", color = C.Muted, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                ExtraSteps(extra.used)
+            }
+            else -> {
+                Text("Need to finish something?", color = C.Text, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Btn("Use ${extra.nextMinutes} more min", onStart, style = BtnStyle.Primary, small = true)
             }
         }
     }
