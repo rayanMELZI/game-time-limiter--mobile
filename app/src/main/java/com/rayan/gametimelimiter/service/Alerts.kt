@@ -145,6 +145,21 @@ object Alerts {
         runCatching { NotificationManagerCompat.from(context).notify(nextId++, n) }
     }
 
+    /** "Update ready" notification; tapping it opens Android's install confirmation. */
+    fun updateReady(context: Context, tap: PendingIntent) {
+        val n = NotificationCompat.Builder(context, CH_WARNINGS_QUIET)
+            .setSmallIcon(R.drawable.ic_stat)
+            .setContentTitle("Update ready")
+            .setContentText("Tap to install the new version of Game Time Limiter.")
+            .setColor(0xFF36D1C4.toInt())
+            .setAutoCancel(true)
+            .setContentIntent(tap)
+            .build()
+        runCatching { NotificationManagerCompat.from(context).notify(UPDATE_ID, n) }
+    }
+
+    private const val UPDATE_ID = 2
+
     /** Always-on-top banner at the top of the screen, like the desktop warning overlay. */
     private fun showBanner(context: Context, alert: Alert) {
         val wm = context.getSystemService(WindowManager::class.java)
