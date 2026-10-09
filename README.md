@@ -23,6 +23,7 @@ Get the latest `.apk` from the [Releases](../../releases/latest) page and open i
 - **Extra time after the limit (per app).** After time's up you can come back for 5, then 2, then 1 more minute, with a 5-minute cooldown between each, to finish what you were doing. Then it's locked for the day.
 - **Your own warning sound.** Pick any audio file in Settings (the first 10 seconds are played), or keep the built-in beep.
 - **Strict mode (per app).** Once the limit is reached the rule can't be edited, paused or removed until the next day.
+- **Updates itself.** Checks GitHub every few hours and installs new versions, never while a limited app is open. The first update asks you to tap Update once; after that, Android 12+ installs updates silently (can be turned off in Settings).
 - **New day at 04:00 by default** (configurable), so using an app past midnight doesn't reset your limit.
 - Weekend limits, a 7/14/30-day history, and a 0-minute limit to block an app completely.
 
@@ -36,6 +37,7 @@ On first launch the app asks for:
 | Display over other apps (required) | Show the warning banner and the lock screen. |
 | Notifications | Warning notifications. |
 | Unrestricted battery | Stops Android from putting the limiter to sleep. |
+| Install unknown apps | Lets the app install its own updates. |
 
 The limiter runs as a background service with a small persistent notification and restarts after a reboot.
 
