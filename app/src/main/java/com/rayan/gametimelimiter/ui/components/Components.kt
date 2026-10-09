@@ -248,3 +248,24 @@ fun PresetChip(text: String, selected: Boolean, onClick: () -> Unit) {
         Text(text, color = if (selected) C.Text else C.Muted, fontSize = 13.sp, fontWeight = FontWeight.Medium)
     }
 }
+
+/** The 5m · 2m · 1m extra sessions, crossed out once used. */
+@Composable
+fun ExtraSteps(used: Int) {
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        com.rayan.gametimelimiter.data.EXTRA_STEPS_MIN.forEachIndexed { i, m ->
+            val done = i < used
+            Text(
+                "${m}m",
+                color = C.Muted,
+                fontSize = 11.sp,
+                textDecoration = if (done) androidx.compose.ui.text.style.TextDecoration.LineThrough else null,
+                modifier = Modifier
+                    .alpha(if (done) 0.55f else 1f)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(C.Surface3)
+                    .padding(horizontal = 6.dp, vertical = 1.dp),
+            )
+        }
+    }
+}
