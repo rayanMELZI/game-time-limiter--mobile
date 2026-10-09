@@ -98,20 +98,25 @@ class LimiterService : Service() {
         startActivity(
             Intent(this, BlockActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                .putExtra(BlockActivity.EXTRA_RULE, request.ruleId)
+                .putExtra(BlockActivity.EXTRA_PKG, request.pkg)
                 .putExtra(BlockActivity.EXTRA_NAME, request.ruleName)
                 .putExtra(BlockActivity.EXTRA_RESET, request.resetAt),
         )
-        // Once it's behind the lock screen, close it for real.
-        main.postDelayed({
-            getSystemService(ActivityManager::class.java).killBackgroundProcesses(request.pkg)
-        }, 1500)
+        // Once no extra time can follow and it's behind the lock screen, close it for real.
+        if (request.kill) {
+            main.postDelayed({
+                getSystemService(ActivityManager::class.java).killBackgroundProcesses(request.pkg)
+            }, 1500)
+        }
     }
 
     private fun updateNotification() {
         val snap = Store.snapshot.value ?: return
-        val playing = snap.rules.firstOrNull { it.running && it.rule.enabled && !it.reached }
+        val playing = snap.rules.firstOrNull { it.running && it.rule.enabled && (!it.reached || it.extra.running) }
         val enabled = snap.rules.count { it.rule.enabled }
         val text = when {
+            playing != null && playing.extra.running -> "${playing.rule.name} · ${fmtDuration(playing.extra.activeLeft ?: 0.0)} of extra time left"
             playing != null -> "${playing.rule.name} · ${fmtDuration(playing.limitSec - playing.usedSec)} left"
             enabled == 0 -> "No limits yet"
             else -> "Watching $enabled app${if (enabled > 1) "s" else ""}"
