@@ -41,6 +41,7 @@ class LimiterService : Service() {
         startInForeground("Watching your apps")
         tracker = ForegroundTracker(this)
         scope.launch { loop() }
+        scope.launch { updateLoop() }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -91,6 +92,20 @@ class LimiterService : Service() {
                 result.block?.let { block(it) }
                 updateNotification()
             }
+        }
+    }
+
+    /** Checks GitHub every few hours and installs new versions when no limited app is on screen. */
+    private suspend fun updateLoop() {
+        delay(60_000)
+        while (scope.isActive) {
+            var wait = 6 * 3600_000L
+            val release = runCatching { Updater.check(this) }.getOrNull()
+            if (release != null && Store.settings.autoUpdate) {
+                val busy = Store.snapshot.value?.rules?.any { it.running && it.rule.enabled } == true
+                if (busy) wait = 5 * 60_000L else Updater.install(this, release)
+            }
+            delay(wait)
         }
     }
 
