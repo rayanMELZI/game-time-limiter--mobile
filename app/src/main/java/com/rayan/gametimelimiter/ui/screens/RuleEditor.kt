@@ -76,6 +76,7 @@ fun RuleEditor(initial: Rule?, onClose: () -> Unit, onSave: (Rule) -> Unit) {
     var weekend by rememberSaveable { mutableStateOf(initial?.weekendLimitMin) }
     val warnings = remember { mutableStateListOf<Int>().apply { addAll(initial?.warningsMin ?: listOf(10, 5, 1)) } }
     var strict by rememberSaveable { mutableStateOf(initial?.lockWhenReached ?: true) }
+    var allowExtra by rememberSaveable { mutableStateOf(initial?.allowExtra ?: true) }
     var picking by rememberSaveable { mutableStateOf(initial == null) }
 
     if (picking) {
@@ -139,6 +140,14 @@ fun RuleEditor(initial: Rule?, onClose: () -> Unit, onSave: (Rule) -> Unit) {
                 }
             }
 
+            OptionBox(
+                on = allowExtra,
+                accent = C.Accent,
+                icon = Ic.Clock,
+                title = "Extra time after the limit",
+                desc = "After time's up, you can come back for 5, then 2, then 1 more minute — with a 5-minute break between each — to finish what you were doing.",
+            ) { allowExtra = it }
+
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -183,6 +192,7 @@ fun RuleEditor(initial: Rule?, onClose: () -> Unit, onSave: (Rule) -> Unit) {
                             warningsMin = warnings.filter { it < maxLimit }.sortedDescending(),
                             lockWhenReached = strict,
                             enabled = initial?.enabled ?: true,
+                            allowExtra = allowExtra,
                         ),
                     )
                 },
@@ -191,6 +201,29 @@ fun RuleEditor(initial: Rule?, onClose: () -> Unit, onSave: (Rule) -> Unit) {
                 enabled = canSave,
             )
         }
+    }
+}
+
+@Composable
+private fun OptionBox(on: Boolean, accent: androidx.compose.ui.graphics.Color, icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, desc: String, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (on) accent.copy(alpha = 0.08f) else C.Surface2)
+            .border(1.dp, if (on) accent.copy(alpha = 0.4f) else C.Border, RoundedCornerShape(14.dp))
+            .clickable { onChange(!on) }
+            .padding(14.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(icon, null, tint = if (on) accent else C.Muted, modifier = Modifier.size(14.dp))
+                Text(title, color = C.Text, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+            }
+            Text(desc, color = C.Muted, fontSize = 12.5.sp)
+        }
+        GSwitch(on, onChange)
     }
 }
 
