@@ -93,17 +93,43 @@ object Alerts {
         if (banner) showBanner(context, alert)
     }
 
-    private fun playSound(context: Context) {
+    /** The custom warning sound picked in the settings (null = built-in beep). */
+    fun customSoundFile(context: Context) = java.io.File(context.filesDir, "custom_sound")
+
+    /** Plays the custom sound if one is set, otherwise the built-in beep. Long sounds stop after 10 seconds. */
+    fun playSound(context: Context) {
         val attrs = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
-        val am = context.getSystemService(android.media.AudioManager::class.java)
-        MediaPlayer.create(context, R.raw.bip, attrs, am.generateAudioSessionId())?.apply {
-            setOnCompletionListener { it.release() }
-            start()
+        val custom = customSoundFile(context).takeIf { Store.settings.soundName != null && it.exists() }
+        val player = custom?.let { file ->
+            runCatching {
+                MediaPlayer().apply {
+                    setAudioAttributes(attrs)
+                    setDataSource(file.absolutePath)
+                    prepare()
+                }
+            }.getOrNull()
+        } ?: run {
+            val am = context.getSystemService(android.media.AudioManager::class.java)
+            MediaPlayer.create(context, R.raw.bip, attrs, am.generateAudioSessionId())
+        } ?: return
+
+        var released = false
+        val release = {
+            if (!released) {
+                released = true
+                runCatching { player.stop() }
+                player.release()
+            }
         }
+        player.setOnCompletionListener { release() }
+        player.start()
+        main.postDelayed({ release() }, MAX_SOUND_MS)
     }
+
+    private const val MAX_SOUND_MS = 10_000L
 
     private fun notify(context: Context, alert: Alert, popUp: Boolean) {
         val n = NotificationCompat.Builder(context, if (popUp) CH_WARNINGS else CH_WARNINGS_QUIET)
