@@ -40,6 +40,8 @@ data class Settings(
     val limiterOn: Boolean = true,
     /** Display name of the custom warning sound (stored as files/custom_sound), null = built-in beep. */
     val soundName: String? = null,
+    /** Download and install new versions automatically (when no limited app is on screen). */
+    val autoUpdate: Boolean = true,
 )
 
 @Serializable
