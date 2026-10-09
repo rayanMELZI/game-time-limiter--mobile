@@ -3,7 +3,11 @@ package com.rayan.gametimelimiter.ui
 import android.Manifest
 import android.content.Intent
 import android.graphics.Color as AColor
+import android.media.MediaPlayer
+import android.net.Uri
 import android.os.Build
+import android.provider.OpenableColumns
+import com.rayan.gametimelimiter.service.Alerts
 import android.os.Bundle
 import android.provider.Settings as AndroidSettings
 import androidx.activity.ComponentActivity
@@ -116,6 +120,30 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** Copies the picked audio file into the app, checks it plays and previews it. Returns an error or null. */
+    private fun setCustomSound(uri: Uri): String? {
+        val name = contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+            if (it.moveToFirst()) it.getString(0) else null
+        } ?: "Custom sound"
+        val dest = Alerts.customSoundFile(this)
+        val tmp = java.io.File(filesDir, "custom_sound.tmp")
+        val copied = runCatching {
+            contentResolver.openInputStream(uri)!!.use { input -> tmp.outputStream().use { input.copyTo(it) } }
+        }.isSuccess
+        val playable = copied && runCatching {
+            MediaPlayer().apply { setDataSource(tmp.absolutePath); prepare(); release() }
+        }.isSuccess
+        if (!playable) {
+            tmp.delete()
+            return "This file can't be played. Try another sound."
+        }
+        dest.delete()
+        tmp.renameTo(dest)
+        Store.setSoundName(name)
+        Alerts.playSound(this)
+        return null
+    }
+
     @Composable
     private fun Root() {
         val p = perms ?: return
@@ -206,6 +234,10 @@ class MainActivity : ComponentActivity() {
                             run(Store.setRuleEnabled(r.id, !r.enabled), if (r.enabled) "${r.name} paused" else "${r.name} resumed")
                         },
                         onDelete = { r -> run(Store.deleteRule(r.id), "${r.name} removed") },
+                        onExtra = { r ->
+                            val result = Store.startExtra(r.id)
+                            run(result.exceptionOrNull()?.message, "${result.getOrNull()} more minutes for ${r.name}")
+                        },
                         onStartLimiter = {
                             run(Store.setLimiterOn(true), "Limiter started")
                             LimiterService.start(this@MainActivity)
@@ -223,6 +255,12 @@ class MainActivity : ComponentActivity() {
                             LimiterService.start(this@MainActivity)
                         },
                         onFixPermission = ::fix,
+                        onPickSound = { uri -> run(setCustomSound(uri), "Warning sound changed") },
+                        onResetSound = {
+                            Alerts.customSoundFile(this@MainActivity).delete()
+                            Store.setSoundName(null)
+                            run(null, "Back to the default beep")
+                        },
                     )
                 }
             }
