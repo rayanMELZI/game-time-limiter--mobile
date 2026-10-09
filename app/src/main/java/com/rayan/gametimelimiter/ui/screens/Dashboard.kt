@@ -41,6 +41,10 @@ import androidx.compose.ui.unit.sp
 import com.rayan.gametimelimiter.R
 import com.rayan.gametimelimiter.data.AppCatalog
 import com.rayan.gametimelimiter.data.ExtraInfo
+import com.rayan.gametimelimiter.service.Updater
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import com.rayan.gametimelimiter.data.Rule
 import com.rayan.gametimelimiter.data.RuleStatus
 import com.rayan.gametimelimiter.data.Snapshot
@@ -95,6 +99,8 @@ fun Dashboard(
                 Text("Today's play time", color = C.Text, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
             }
         }
+
+        item { UpdateBanner(snap.settings.autoUpdate) }
 
         if (!snap.settings.limiterOn) {
             item {
@@ -264,6 +270,32 @@ fun RuleCard(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun UpdateBanner(auto: Boolean) {
+    val context = LocalContext.current
+    val upd by Updater.status.collectAsState()
+    val scope = rememberCoroutineScope()
+    val version = upd.available ?: return
+    Card(border = C.Accent2.copy(alpha = 0.35f)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Icon(Ic.Refresh, null, tint = C.Accent2, modifier = Modifier.size(20.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Version $version is available", color = C.Text, fontWeight = FontWeight.SemiBold)
+                Text(
+                    when {
+                        upd.waitingForUser -> "Tap Update in the prompt or notification."
+                        upd.installing -> "Installing…"
+                        auto -> "It installs by itself when no limited app is open."
+                        else -> "Install it whenever you're ready."
+                    },
+                    color = C.Muted, fontSize = 12.5.sp,
+                )
+            }
+            Btn("Install", { scope.launch { Updater.install(context) } }, style = BtnStyle.Primary, small = true, enabled = !upd.installing)
         }
     }
 }
