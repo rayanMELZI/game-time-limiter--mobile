@@ -47,6 +47,12 @@ object Permissions {
     fun overlayIntent(context: Context) =
         Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}"))
 
+    /** "Install unknown apps" for this app, needed to install its own updates. */
+    fun canInstallUpdates(context: Context) = context.packageManager.canRequestPackageInstalls()
+
+    fun installUpdatesIntent(context: Context) =
+        Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))
+
     @SuppressLint("BatteryLife")
     fun batteryIntent(context: Context) =
         Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${context.packageName}"))

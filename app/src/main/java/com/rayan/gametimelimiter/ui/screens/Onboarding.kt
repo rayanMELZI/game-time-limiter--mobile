@@ -38,9 +38,9 @@ import com.rayan.gametimelimiter.ui.components.BtnStyle
 import com.rayan.gametimelimiter.ui.theme.C
 import com.rayan.gametimelimiter.ui.theme.Ic
 
-enum class Perm { Usage, Overlay, Notifications, Battery }
+enum class Perm { Usage, Overlay, Notifications, Battery, Installs }
 
-data class PermState(val usage: Boolean, val overlay: Boolean, val notifications: Boolean, val battery: Boolean) {
+data class PermState(val usage: Boolean, val overlay: Boolean, val notifications: Boolean, val battery: Boolean, val installs: Boolean) {
     val required get() = usage && overlay
 
     companion object {
@@ -49,6 +49,7 @@ data class PermState(val usage: Boolean, val overlay: Boolean, val notifications
             overlay = Permissions.hasOverlay(context),
             notifications = Permissions.hasNotifications(context),
             battery = Permissions.ignoresBatteryOptimizations(context),
+            installs = Permissions.canInstallUpdates(context),
         )
     }
 }
