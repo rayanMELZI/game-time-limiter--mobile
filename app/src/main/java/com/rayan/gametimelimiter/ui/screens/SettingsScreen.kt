@@ -1,5 +1,8 @@
 package com.rayan.gametimelimiter.ui.screens
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -50,9 +53,12 @@ fun SettingsScreen(
     onStopLimiter: () -> Unit,
     onStartLimiter: () -> Unit,
     onFixPermission: (Perm) -> Unit,
+    onPickSound: (Uri) -> Unit,
+    onResetSound: () -> Unit,
 ) {
     val context = LocalContext.current
     val s = snap.settings
+    val pickSound = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(onPickSound) }
     val update = { patch: Settings -> onSave(patch) }
 
     LazyColumn(
@@ -95,8 +101,15 @@ fun SettingsScreen(
                 Setting("On-screen banner", "A banner at the top of the screen, shown over the app you're using.") {
                     GSwitch(s.overlay) { update(s.copy(overlay = it)) }
                 }
-                Setting("Warning sound", "Plays a beep with every warning.") {
+                Setting("Warning sound", "Plays a sound with every warning.") {
                     GSwitch(s.sound) { update(s.copy(sound = it)) }
+                }
+                Setting("Sound", (s.soundName ?: "Default beep") + " · first 10 seconds") {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Btn(null, { Alerts.playSound(context) }, icon = Ic.Play, small = true)
+                        if (s.soundName != null) Btn("Reset", { onResetSound() }, small = true)
+                        Btn("Choose", { pickSound.launch(arrayOf("audio/*")) }, small = true)
+                    }
                 }
                 Setting("Notifications", "Also sends a regular notification.") {
                     GSwitch(s.notifications) { update(s.copy(notifications = it)) }
