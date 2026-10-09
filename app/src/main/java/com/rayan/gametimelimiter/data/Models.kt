@@ -17,6 +17,8 @@ data class Rule(
     /** Once the limit is reached the rule can't be edited, paused or removed until the next day. */
     val lockWhenReached: Boolean = true,
     val enabled: Boolean = true,
+    /** After the limit, allow short extra sessions (see EXTRA_STEPS_MIN). */
+    val allowExtra: Boolean = true,
 ) {
     fun limitSec(day: DayOfWeek): Double {
         val weekend = day == DayOfWeek.SATURDAY || day == DayOfWeek.SUNDAY
@@ -36,6 +38,8 @@ data class Settings(
     val guardStop: Boolean = true,
     /** False once the user stopped the limiter from the settings. */
     val limiterOn: Boolean = true,
+    /** Display name of the custom warning sound (stored as files/custom_sound), null = built-in beep. */
+    val soundName: String? = null,
 )
 
 @Serializable
@@ -46,7 +50,35 @@ data class AppData(
     val usage: Map<String, Map<String, Double>> = emptyMap(),
     /** Latest trusted timestamp ever seen; time never goes backwards past it. */
     val lastSeen: Long = 0,
+    /** rule id -> extra time used today */
+    val extra: Map<String, ExtraState> = emptyMap(),
 )
+
+/** Extra time after the limit: 5, then 2, then 1 minute, each followed by a cooldown. */
+val EXTRA_STEPS_MIN = listOf(5, 2, 1)
+const val EXTRA_COOLDOWN_MS = 5 * 60_000L
+
+@Serializable
+data class ExtraState(
+    val day: String = "",
+    /** Number of extra sessions started today. */
+    val stage: Int = 0,
+    val activeUntil: Long? = null,
+    val cooldownUntil: Long? = null,
+)
+
+data class ExtraInfo(
+    /** Seconds left in the running extra session. */
+    val activeLeft: Double?,
+    /** Seconds until the next extra session can start. */
+    val cooldownLeft: Double?,
+    /** Length of the next extra session, if any is left. */
+    val nextMinutes: Int?,
+    val used: Int,
+) {
+    val running get() = activeLeft != null
+    val canStart get() = activeLeft == null && cooldownLeft == null && nextMinutes != null
+}
 
 data class DayInfo(val key: String, val date: LocalDate, val weekday: DayOfWeek, val nextReset: ZonedDateTime)
 
@@ -58,6 +90,7 @@ data class RuleStatus(
     val running: Boolean,
     val reached: Boolean,
     val locked: Boolean,
+    val extra: ExtraInfo,
 )
 
 data class Snapshot(
@@ -73,4 +106,5 @@ enum class Level { Info, Warning, Danger }
 
 data class Alert(val level: Level, val title: String, val body: String)
 
-data class BlockRequest(val ruleName: String, val pkg: String, val resetAt: String)
+/** [kill]: no extra time can follow, so the app is closed for the day. */
+data class BlockRequest(val ruleId: String, val ruleName: String, val pkg: String, val resetAt: String, val kill: Boolean)
