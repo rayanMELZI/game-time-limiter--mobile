@@ -37,6 +37,10 @@ import com.rayan.gametimelimiter.data.Level
 import com.rayan.gametimelimiter.data.Settings
 import com.rayan.gametimelimiter.data.Snapshot
 import com.rayan.gametimelimiter.service.Alerts
+import com.rayan.gametimelimiter.service.Updater
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import com.rayan.gametimelimiter.ui.components.Btn
 import com.rayan.gametimelimiter.ui.components.BtnStyle
 import com.rayan.gametimelimiter.ui.components.Card
@@ -123,6 +127,34 @@ fun SettingsScreen(
         }
 
         item {
+            val upd by Updater.status.collectAsState()
+            val scope = rememberCoroutineScope()
+            Group(Ic.Refresh, "Updates") {
+                Setting(
+                    "Version ${upd.current}" + (upd.available?.let { " · $it available" } ?: ""),
+                    when {
+                        upd.waitingForUser -> "Tap Update in Android's prompt (or the notification) to finish."
+                        upd.installing -> "Downloading and installing the update…"
+                        upd.checking -> "Checking for updates…"
+                        upd.error != null -> upd.error!!
+                        upd.available != null -> if (s.autoUpdate) "It installs by itself when no limited app is open." else "A new version is ready to install."
+                        upd.checkedAt != null -> "Up to date."
+                        else -> "Checks GitHub for new versions every few hours."
+                    },
+                ) {
+                    if (upd.available != null) {
+                        Btn("Install", { scope.launch { Updater.install(context) } }, small = true, style = BtnStyle.Primary, enabled = !upd.installing)
+                    } else {
+                        Btn("Check", { scope.launch { Updater.check(context) } }, small = true, enabled = !upd.checking)
+                    }
+                }
+                Setting("Install updates automatically", "Downloads new versions by itself, never while a limited app is open.") {
+                    GSwitch(s.autoUpdate) { update(s.copy(autoUpdate = it)) }
+                }
+            }
+        }
+
+        item {
             Group(Ic.Shield, "Protection") {
                 Setting("Stop protection", "Blocks stopping the limiter while a limited app is open or a limit is locked.") {
                     GSwitch(s.guardStop) { update(s.copy(guardStop = it)) }
@@ -147,6 +179,7 @@ fun SettingsScreen(
                 PermRow("Display over other apps", "Shows warnings and the lock screen", perms.overlay) { onFixPermission(Perm.Overlay) }
                 PermRow("Notifications", "Warning notifications", perms.notifications) { onFixPermission(Perm.Notifications) }
                 PermRow("Unrestricted battery", "Keeps the limiter running reliably", perms.battery) { onFixPermission(Perm.Battery) }
+                PermRow("Install updates", "Lets the app install its own new versions", perms.installs) { onFixPermission(Perm.Installs) }
             }
         }
     }
