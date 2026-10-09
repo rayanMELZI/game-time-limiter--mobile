@@ -35,3 +35,9 @@ fun hueFor(text: String): Float {
     for (c in text) h = (h * 31 + c.code) and 0xFFFFFFFFL
     return HUES[(h % HUES.size).toInt()]
 }
+
+/** "4:05" countdown */
+fun fmtCountdown(sec: Double): String {
+    val s = max(0L, kotlin.math.ceil(sec).toLong())
+    return "${s / 60}:${pad(s % 60)}"
+}
