@@ -2,6 +2,10 @@
 
 Daily time limits for any game or app on your Android phone. Native Kotlin + Jetpack Compose.
 
+## Download
+
+Get the latest `.apk` from the [Releases](../../releases/latest) page and open it on your phone (Android 8 or newer). Android will ask you to allow installing apps from your browser or file manager.
+
 | Today | Limit reached | Time's up |
 | --- | --- | --- |
 | ![Today](docs/today.png) | ![Locked](docs/locked.png) | ![Time's up](docs/time-up.png) |
