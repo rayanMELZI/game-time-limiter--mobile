@@ -97,7 +97,19 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        visible = true
         refresh()
+    }
+
+    override fun onPause() {
+        visible = false
+        super.onPause()
+    }
+
+    companion object {
+        /** Used to decide between showing the update prompt directly or as a notification. */
+        @Volatile
+        var visible = false
     }
 
     private fun refresh() {
@@ -116,6 +128,7 @@ class MainActivity : ComponentActivity() {
                     notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
                 }
                 Perm.Battery -> startActivity(Permissions.batteryIntent(this))
+                Perm.Installs -> startActivity(Permissions.installUpdatesIntent(this))
             }
         }
     }
