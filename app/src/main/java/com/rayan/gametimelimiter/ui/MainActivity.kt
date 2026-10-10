@@ -53,12 +53,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.rayan.gametimelimiter.data.ActionDashImport
+import com.rayan.gametimelimiter.data.AppHistory
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import com.rayan.gametimelimiter.data.Rule
 import com.rayan.gametimelimiter.data.Store
 import com.rayan.gametimelimiter.service.LimiterService
 import com.rayan.gametimelimiter.service.Permissions
 import com.rayan.gametimelimiter.ui.screens.Dashboard
 import com.rayan.gametimelimiter.ui.screens.History
+import com.rayan.gametimelimiter.ui.screens.ImportResultDialog
 import com.rayan.gametimelimiter.ui.screens.Onboarding
 import com.rayan.gametimelimiter.ui.screens.Perm
 import com.rayan.gametimelimiter.ui.screens.PermState
@@ -75,6 +80,20 @@ private data class Notice(val text: String, val error: Boolean, val id: Long = S
 
 class MainActivity : ComponentActivity() {
     private var perms by mutableStateOf<PermState?>(null)
+    private var importProgress by mutableStateOf<Float?>(null)
+    private var importResult by mutableStateOf<ActionDashImport.Result?>(null)
+    private var importError by mutableStateOf<String?>(null)
+
+    private val pickBackup = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        importProgress = 0f
+        lifecycleScope.launch {
+            runCatching { ActionDashImport.run(this@MainActivity, uri) { importProgress = it } }
+                .onSuccess { importResult = it }
+                .onFailure { importError = it.message ?: "Import failed." }
+            importProgress = null
+        }
+    }
 
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (!granted) {
@@ -91,6 +110,7 @@ class MainActivity : ComponentActivity() {
         )
         super.onCreate(savedInstanceState)
         Store.init(this)
+        AppHistory.init(this)
         refresh()
         setContent { GtlTheme { Root() } }
     }
@@ -269,6 +289,8 @@ class MainActivity : ComponentActivity() {
                         },
                         onFixPermission = ::fix,
                         onPickSound = { uri -> run(setCustomSound(uri), "Warning sound changed") },
+                        importProgress = importProgress,
+                        onImportActionDash = { pickBackup.launch(arrayOf("*/*")) },
                         onResetSound = {
                             Alerts.customSoundFile(this@MainActivity).delete()
                             Store.setSoundName(null)
@@ -287,6 +309,19 @@ class MainActivity : ComponentActivity() {
                         if (run(Store.saveRule(rule), if (initial == null) "${rule.name} is now limited" else "Changes saved")) editing = null
                     },
                 )
+            }
+
+            LaunchedEffect(importError) {
+                importError?.let { msg ->
+                    run(msg, null)
+                    importError = null
+                }
+            }
+            importResult?.let { result ->
+                ImportResultDialog(result, s.rules.flatMap { it.rule.packages }.toSet(), onDone = { created ->
+                    importResult = null
+                    run(null, if (created > 0) "History imported · $created limit${if (created > 1) "s" else ""} created" else "History imported")
+                })
             }
 
             AnimatedVisibility(
