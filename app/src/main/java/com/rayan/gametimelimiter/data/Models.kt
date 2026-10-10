@@ -16,10 +16,15 @@ data class Rule(
     val warningsMin: List<Int> = listOf(10, 5, 1),
     /** Once the limit is reached the rule can't be edited, paused or removed until the next day. */
     val lockWhenReached: Boolean = true,
+    /** Super strict: lock from the first (biggest) warning instead of at the limit. */
+    val lockEarly: Boolean = false,
     val enabled: Boolean = true,
     /** After the limit, allow short extra sessions (see EXTRA_STEPS_MIN). */
     val allowExtra: Boolean = true,
 ) {
+    /** Seconds before the limit at which a super strict rule locks (its biggest warning). */
+    val earlyLockSec: Double get() = (warningsMin.maxOrNull() ?: 0) * 60.0
+
     fun limitSec(day: DayOfWeek): Double {
         val weekend = day == DayOfWeek.SATURDAY || day == DayOfWeek.SUNDAY
         val min = if (weekend && weekendLimitMin != null) weekendLimitMin else dailyLimitMin
@@ -92,6 +97,8 @@ data class RuleStatus(
     val running: Boolean,
     val reached: Boolean,
     val locked: Boolean,
+    /** Locked by super strict mode before the limit was reached. */
+    val lockedEarly: Boolean,
     val extra: ExtraInfo,
 )
 
