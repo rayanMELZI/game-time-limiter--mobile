@@ -226,7 +226,7 @@ fun RuleCard(
                     if (inExtra) {
                         Text(fmtCountdown(status.extra.activeLeft ?: 0.0), color = C.Text, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
                         Text("extra time", color = C.Muted, fontSize = 11.5.sp)
-                    } else if (status.locked) {
+                    } else if (status.locked && status.reached) {
                         Icon(Ic.Lock, null, tint = C.Danger, modifier = Modifier.size(22.dp))
                         Text("until $resetAt", color = C.Muted, fontSize = 11.5.sp)
                     } else {
@@ -244,7 +244,8 @@ fun RuleCard(
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 rule.packages.forEach { Chip(AppCatalog.label(context, it), Ic.Apps) }
                 rule.weekendLimitMin?.let { Chip("Weekend ${fmtMinutes(it)}") }
-                if (rule.lockWhenReached) Chip("Strict", Ic.Lock, color = C.Warn, highlight = true)
+                if (rule.lockEarly) Chip("Super strict", Ic.Lock, color = C.Danger, highlight = true)
+                else if (rule.lockWhenReached) Chip("Strict", Ic.Lock, color = C.Warn, highlight = true)
             }
 
             if (status.reached && rule.enabled && rule.allowExtra) ExtraRow(status.extra) { onExtra(rule) }
@@ -255,7 +256,11 @@ fun RuleCard(
                 when {
                     status.locked -> {
                         Icon(Ic.Lock, null, tint = C.Danger, modifier = Modifier.size(14.dp))
-                        Text("Locked — editing unlocks at $resetAt", color = C.Muted, fontSize = 13.sp)
+                        Text(
+                            if (status.lockedEarly) "Super strict — locked since the first warning, unlocks at $resetAt"
+                            else "Locked — editing unlocks at $resetAt",
+                            color = C.Muted, fontSize = 13.sp,
+                        )
                     }
                     confirmDelete -> {
                         Text("Remove this limit?", color = C.Muted, fontSize = 13.sp, modifier = Modifier.weight(1f))
