@@ -75,7 +75,9 @@ fun RuleEditor(initial: Rule?, onClose: () -> Unit, onSave: (Rule) -> Unit) {
     var limit by rememberSaveable { mutableStateOf(initial?.dailyLimitMin ?: 60) }
     var weekend by rememberSaveable { mutableStateOf(initial?.weekendLimitMin) }
     val warnings = remember { mutableStateListOf<Int>().apply { addAll(initial?.warningsMin ?: listOf(10, 5, 1)) } }
-    var strict by rememberSaveable { mutableStateOf(initial?.lockWhenReached ?: true) }
+    var lock by rememberSaveable {
+        mutableStateOf(if (initial?.lockEarly == true) "super" else if (initial?.lockWhenReached == false) "off" else "strict")
+    }
     var allowExtra by rememberSaveable { mutableStateOf(initial?.allowExtra ?: true) }
     var picking by rememberSaveable { mutableStateOf(initial == null) }
 
@@ -148,28 +150,7 @@ fun RuleEditor(initial: Rule?, onClose: () -> Unit, onSave: (Rule) -> Unit) {
                 desc = "After time's up, you can come back for 5, then 2, then 1 more minute — with a 5-minute break between each — to finish what you were doing.",
             ) { allowExtra = it }
 
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(if (strict) C.Warn.copy(alpha = 0.06f) else C.Surface2)
-                    .border(1.dp, if (strict) C.Warn.copy(alpha = 0.35f) else C.Border, RoundedCornerShape(14.dp))
-                    .clickable { strict = !strict }
-                    .padding(14.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Icon(Ic.Lock, null, tint = if (strict) C.Warn else C.Muted, modifier = Modifier.size(14.dp))
-                        Text("Strict mode", color = C.Text, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                    }
-                    Text(
-                        "Once the limit is reached, this rule can't be edited, paused or removed until the next day. Turn it off if you want to be able to extend your time.",
-                        color = C.Muted, fontSize = 12.5.sp,
-                    )
-                }
-                GSwitch(strict) { strict = it }
-            }
+            LockLevelBox(lock, warnings.maxOrNull()) { lock = it }
             Spacer(Modifier.height(4.dp))
         }
 
@@ -190,7 +171,8 @@ fun RuleEditor(initial: Rule?, onClose: () -> Unit, onSave: (Rule) -> Unit) {
                             dailyLimitMin = limit,
                             weekendLimitMin = weekend,
                             warningsMin = warnings.filter { it < maxLimit }.sortedDescending(),
-                            lockWhenReached = strict,
+                            lockWhenReached = lock != "off",
+                            lockEarly = lock == "super",
                             enabled = initial?.enabled ?: true,
                             allowExtra = allowExtra,
                         ),
@@ -201,6 +183,60 @@ fun RuleEditor(initial: Rule?, onClose: () -> Unit, onSave: (Rule) -> Unit) {
                 enabled = canSave,
             )
         }
+    }
+}
+
+/** Off / Strict (lock at the limit) / Super strict (lock from the first warning). */
+@Composable
+private fun LockLevelBox(level: String, firstWarning: Int?, onChange: (String) -> Unit) {
+    val accent = when (level) {
+        "super" -> C.Danger
+        "strict" -> C.Warn
+        else -> C.Muted
+    }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (level == "off") C.Surface2 else accent.copy(alpha = 0.06f))
+            .border(1.dp, if (level == "off") C.Border else accent.copy(alpha = 0.38f), RoundedCornerShape(14.dp))
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Icon(Ic.Lock, null, tint = accent, modifier = Modifier.size(14.dp))
+            Text("Lock this limit", color = C.Text, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+        }
+        Row(
+            Modifier.clip(RoundedCornerShape(10.dp)).background(C.Bg).border(1.dp, C.Border, RoundedCornerShape(10.dp)).padding(3.dp),
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            listOf("off" to "Off", "strict" to "Strict", "super" to "Super strict").forEach { (id, label) ->
+                val on = level == id
+                Text(
+                    label,
+                    color = if (on) (if (id == "super") C.Danger else C.Text) else C.Muted,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(7.dp))
+                        .background(if (on) (if (id == "super") C.Danger.copy(alpha = 0.18f) else C.Surface3) else C.Bg)
+                        .clickable { onChange(id) }
+                        .padding(vertical = 8.dp),
+                )
+            }
+        }
+        Text(
+            when (level) {
+                "off" -> "You can always edit, pause or extend this limit."
+                "strict" -> "Once the limit is reached, it can't be edited, paused or removed until the next day."
+                else -> if (firstWarning != null) "Locks $firstWarning minutes before the limit, when the first warning shows — no more adding time at the last minute. Stays locked until the next day."
+                else "Locks at the first warning. With no warnings set, it locks when the limit is reached."
+            },
+            color = C.Muted, fontSize = 12.5.sp,
+        )
     }
 }
 
