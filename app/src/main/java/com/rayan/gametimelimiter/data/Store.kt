@@ -90,6 +90,7 @@ object Store {
         val used = data.usage[day.key]?.get(rule.id) ?: 0.0
         val limit = rule.limitSec(day.weekday)
         val reached = rule.enabled && used >= limit
+        val early = rule.enabled && rule.lockEarly && !reached && used >= limit - rule.earlyLockSec
         val state = data.extra[rule.id]?.takeIf { it.day == day.key } ?: ExtraState(day.key)
         return RuleStatus(
             rule = rule,
@@ -97,7 +98,8 @@ object Store {
             limitSec = limit,
             running = running[rule.id] == true,
             reached = reached,
-            locked = reached && rule.lockWhenReached,
+            locked = (reached && (rule.lockWhenReached || rule.lockEarly)) || early,
+            lockedEarly = early,
             extra = extraInfo(state, now, rule.allowExtra),
         )
     }
@@ -273,10 +275,12 @@ object Store {
             val due = rule.warningsMin.filter { remaining <= it * 60.0 && it !in shown }
             if (due.isNotEmpty()) {
                 shown += due
+                val locksNow = rule.lockEarly && due.max() == rule.warningsMin.max()
                 alerts += Alert(
                     Level.Warning,
                     "${rule.name} — ${fmtRemaining(remaining)} left",
-                    "Save your progress now. It will be closed when the time runs out.",
+                    if (locksNow) "Super strict: this limit is now locked for today and can't be changed."
+                    else "Save your progress now. It will be closed when the time runs out.",
                 )
             }
         }
