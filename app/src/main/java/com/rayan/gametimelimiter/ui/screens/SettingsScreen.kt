@@ -59,6 +59,8 @@ fun SettingsScreen(
     onFixPermission: (Perm) -> Unit,
     onPickSound: (Uri) -> Unit,
     onResetSound: () -> Unit,
+    importProgress: Float?,
+    onImportActionDash: () -> Unit,
 ) {
     val context = LocalContext.current
     val s = snap.settings
@@ -150,6 +152,18 @@ fun SettingsScreen(
                 }
                 Setting("Install updates automatically", "Downloads new versions by itself, never while a limited app is open.") {
                     GSwitch(s.autoUpdate) { update(s.copy(autoUpdate = it)) }
+                }
+            }
+        }
+
+        item {
+            Group(Ic.Chart, "Data") {
+                Setting(
+                    "Import from ActionDash",
+                    if (importProgress != null) "Importing… ${(importProgress * 100).toInt()}%"
+                    else "Adds your screen-time history from an ActionDash backup file (.backup). Nothing is counted twice if you import again.",
+                ) {
+                    Btn("Import", onImportActionDash, small = true, enabled = importProgress == null)
                 }
             }
         }
