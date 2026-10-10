@@ -12,6 +12,7 @@ import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
 import androidx.core.content.ContextCompat
+import com.rayan.gametimelimiter.data.AppHistory
 import com.rayan.gametimelimiter.data.BlockRequest
 import com.rayan.gametimelimiter.data.Store
 import com.rayan.gametimelimiter.ui.BlockActivity
@@ -37,6 +38,7 @@ class LimiterService : Service() {
     override fun onCreate() {
         super.onCreate()
         Store.init(this)
+        AppHistory.init(this)
         Alerts.createChannels(this)
         startInForeground("Watching your apps")
         tracker = ForegroundTracker(this)
@@ -55,6 +57,7 @@ class LimiterService : Service() {
     override fun onDestroy() {
         scope.cancel()
         Store.save()
+        AppHistory.save()
         super.onDestroy()
     }
 
@@ -87,6 +90,7 @@ class LimiterService : Service() {
             val foreground = if (screenOn) runCatching { tracker.current() }.getOrNull() else null
 
             val result = Store.tick(foreground?.takeIf { it != packageName }, dt)
+            AppHistory.saveIfDue()
             withContext(Dispatchers.Main) {
                 result.alerts.forEach { Alerts.alert(this@LimiterService, it) }
                 result.block?.let { block(it) }
