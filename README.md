@@ -22,6 +22,8 @@ Get the latest `.apk` from the [Releases](../../releases/latest) page and open i
 - **Locks it until tomorrow.** When the limit is reached, a full-screen "Time's up" page covers the app and it's closed. Opening it again brings the lock screen back until the next day.
 - **Extra time after the limit (per app).** After time's up you can come back for 5, then 2, then 1 more minute, with a 5-minute cooldown between each, to finish what you were doing. Then it's locked for the day.
 - **Your own warning sound.** Pick any audio file in Settings (the first 10 seconds are played), or keep the built-in beep.
+- **Full screen-time history.** Records how long you use every app (not just limited ones), with 7-day to all-time charts and your top apps.
+- **Import from ActionDash.** Settings → Import from ActionDash reads an ActionDash `.backup` file and adds your past screen time to the history, and can recreate your ActionDash limits.
 - **Lock levels (per app).** *Strict*: once the limit is reached, the rule can't be edited, paused or removed until the next day. *Super strict*: it locks already at the first warning (e.g. 30 minutes before the limit), so you can't keep adding time when it's nearly up.
 - **Updates itself.** Checks GitHub every few hours and installs new versions, never while a limited app is open. The first update asks you to tap Update once; after that, Android 12+ installs updates silently (can be turned off in Settings).
 - **New day at 04:00 by default** (configurable), so using an app past midnight doesn't reset your limit.
