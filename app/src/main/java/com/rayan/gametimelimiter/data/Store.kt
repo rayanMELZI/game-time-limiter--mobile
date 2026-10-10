@@ -74,6 +74,9 @@ object Store {
 
     private fun today(): DayInfo = dayAt(now())
 
+    /** The day (following the "new day starts at" setting) that a timestamp belongs to. */
+    fun dayInfoAt(t: Long): DayInfo = dayAt(t)
+
     private fun dayAt(t: Long): DayInfo {
         val zone = ZoneId.systemDefault()
         val shifted = Instant.ofEpochMilli(t).atZone(zone).minusHours(data.settings.resetHour.toLong())
@@ -206,6 +209,8 @@ object Store {
         var block: BlockRequest? = null
         val dayUsage = (data.usage[day.key] ?: emptyMap()).toMutableMap()
         running.clear()
+        // Full screen-time history (all apps), like ActionDash.
+        if (foreground != null && dt > 0) AppHistory.add(day.key, foreground, dt)
 
         for (rule in data.rules.filter { it.enabled }) {
             val onScreen = foreground != null && foreground in rule.packages
